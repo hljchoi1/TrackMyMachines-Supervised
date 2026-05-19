@@ -14,7 +14,7 @@ st.set_page_config(page_title="CNC Maintenance Audit", layout="wide", page_icon=
 @st.cache_resource
 def load_model():
     """Loads the trained Random Forest model."""
-    model_path = 'models/rf_tool_wear_model.pkl'
+    model_path = 'models/random_forest_tool_wear_model.pkl'
     if os.path.exists(model_path):
         return joblib.load(model_path)
     else:
@@ -68,7 +68,7 @@ data_source = st.sidebar.radio("Select Data Source", ["Use Synthetic Data (GitHu
 df_current_raw, df_timeline_raw = None, None
 
 if data_source == "Upload Original Data":
-    st.sidebar.info("Upload your private Machine 290 logs.")
+    st.sidebar.info("Upload your own machine data.")
     file_curr = st.sidebar.file_uploader("Upload current_data.csv", type=['csv'])
     file_time = st.sidebar.file_uploader("Upload machine_timelines.csv", type=['csv'])
     if file_curr and file_time:
@@ -85,19 +85,19 @@ st.sidebar.markdown("---")
 st.sidebar.markdown("### 2. Model Parameters")
 
 threshold = st.sidebar.slider(
-    "Classification Threshold",
+    "Confidence Threshold",
     min_value=0.50, max_value=0.99, value=0.86, step=0.01,
-    help="Default is 0.50. Move to 0.86 to filter out aggressive SMOTE bias."
+    help="Default is 0.86. Increase confidence value to reduce the amount of false positives."
 )
 
 # --- MAIN DASHBOARD INTERFACE ---
-st.title("Autonomous Maintenance Verification Dashboard")
-st.markdown("Bridging the gap in industrial logging through intelligent spindle current analysis.")
+st.title("Tool Replacement Dashboard")
+st.markdown("Analysing current data to predict tool replacement events."
 
 model = load_model()
 
 if not model:
-    st.error("⚠️ Trained model not found. Please ensure `models/rf_tool_wear_model.pkl` exists or run `train_pipeline.py` first.")
+    st.error("ERROR: Trained model not found. Please ensure `models/random_forest_tool_wear_model.pkl` exists or run `train_pipeline.py` first.")
 elif df_current_raw is not None and df_timeline_raw is not None:
     
     with st.spinner("Engineering features and running model inference..."):
@@ -113,7 +113,7 @@ elif df_current_raw is not None and df_timeline_raw is not None:
         df['missing_from_log'] = ((df['ai_detected_event'] == 1) & (df['manual_log_event'] == 0)).astype(int)
 
     # --- KPIs ---
-    st.subheader("Audit Summary")
+    st.subheader("Summary")
     col1, col2, col3, col4 = st.columns(4)
 
     total_logged = df[df['manual_log_event'] == 1]['created_at'].dt.floor('Min').nunique()
@@ -122,20 +122,20 @@ elif df_current_raw is not None and df_timeline_raw is not None:
 
     col1.metric("Manually Logged Changes", total_logged)
     col2.metric("AI Detected Changes", total_detected)
-    col3.metric("Unrecorded High-Risk Events", unrecorded_flags, delta=int(unrecorded_flags), delta_color="inverse")
-    col4.metric("Active Threshold", f"{threshold:.2f}")
+    col3.metric("Unrecorded Tool Replacements", unrecorded_flags, delta=int(unrecorded_flags), delta_color="inverse")
+    col4.metric("Current Confidence Threshold", f"{threshold:.2f}")
 
     st.markdown("---")
 
-    # --- VISUALIZATION ---
-    st.subheader("Spindle Current Analysis & Event Verification")
+    # --- VISUALISATION ---
+    st.subheader("Details")
 
     fig = go.Figure()
 
     # Raw Current
     fig.add_trace(go.Scatter(
         x=df['created_at'], y=df['avg_current'], 
-        mode='lines', name='Motor Current (Amps)', 
+        mode='lines', name='Spindle Current (Amps)', 
         line=dict(color='lightgrey', width=1)
     ))
 
@@ -162,7 +162,7 @@ elif df_current_raw is not None and df_timeline_raw is not None:
     colA, colB = st.columns([2, 1])
 
     with colA:
-        st.subheader("Actionable Maintenance Gap Log")
+        st.subheader("AI detected events")
         st.markdown("Timestamps where the AI detected a tool change with high probability, but no manual log exists.")
         
         audit_df = df[df['missing_from_log'] == 1].copy()
@@ -174,8 +174,8 @@ elif df_current_raw is not None and df_timeline_raw is not None:
             st.success("No unrecorded maintenance events found at this threshold!")
 
     with colB:
-        st.subheader("Model Diagnostics")
-        st.markdown("Dynamic Confusion Matrix (Timestamp Level)")
+        st.subheader("Model Prediction Statistics")
+        st.markdown("Confusion Matrix")
         
         cm = confusion_matrix(df['manual_log_event'], df['ai_detected_event'])
         if cm.shape == (2,2):
@@ -185,7 +185,7 @@ elif df_current_raw is not None and df_timeline_raw is not None:
                 index=["Actual Normal", "Actual Event"]
             ))
         else:
-            st.info("Adjust threshold to populate matrix.")
+            st.info("Adjust threshold to alter matrix data.")
 
 else:
     st.info("👈 Please select a data source from the sidebar to begin.")
